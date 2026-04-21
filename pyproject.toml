@@ -26,7 +26,7 @@ classifiers = [
 ]
 dependencies = [
     "cryptography>=42.0.0",
-    "pytun>=2.3.0",
+    "python-pytun>=2.3.0",
     "aiohttp>=3.9.0",
     "click>=8.1.0",
 ]

@@ -88,6 +88,9 @@ class TerminalControls:
     - clients: List connected clients
     - kick <id>: Disconnect a client
     - stats: Show server statistics
+    - setup-nat: Enable NAT/forwarding for internet access
+    - check-nat: Check NAT/forwarding status
+    - disable-nat: Disable NAT/forwarding
     - help: Show available commands
     - quit: Shutdown server
     """
@@ -99,18 +102,21 @@ class TerminalControls:
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-    def __init__(self, server: VPNServer, detect_ip: bool = True):
+    def __init__(self, server: VPNServer, detect_ip: bool = True, tun_device: str = "tun0"):
         """
         Initialize terminal controls.
 
         Args:
             server: VPN server instance
             detect_ip: Whether to detect and display IP addresses
+            tun_device: TUN device name for NAT setup (default: tun0)
         """
         self.server = server
+        self.server = server
+        self.detect_ip = detect_ip
+        self.tun_device = tun_device
         self._running = True
         self._start_time = datetime.now()
-        self.detect_ip = detect_ip
 
         # Detect IP addresses
         self.public_ip = None
@@ -386,7 +392,7 @@ class TerminalControls:
             check_proc = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    ["iptables", "-C", "FORWARD", "-i", self.server.tun.device_name, "-j", "ACCEPT"],
+                    ["iptables", "-C", "FORWARD", "-i", self.tun_device, "-j", "ACCEPT"],
                     capture_output=True,
                 )
             )
@@ -395,13 +401,13 @@ class TerminalControls:
                 proc = await loop.run_in_executor(
                     None,
                     lambda: subprocess.run(
-                        ["iptables", "-A", "FORWARD", "-i", self.server.tun.device_name, "-j", "ACCEPT"],
+                        ["iptables", "-A", "FORWARD", "-i", self.tun_device, "-j", "ACCEPT"],
                         capture_output=True,
                         text=True,
                     )
                 )
                 if proc.returncode == 0:
-                    print(f"[+] Forward rule added for {self.server.tun.device_name}")
+                    print(f"[+] Forward rule added for {self.tun_device}")
                 else:
                     print(f"[!] Failed to add forward rule: {proc.stderr}")
             else:
@@ -461,7 +467,7 @@ class TerminalControls:
 
         # Check forwarding rule
         try:
-            tun_name = self.server.tun.device_name
+            tun_name = self.tun_device
             proc = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
@@ -489,7 +495,7 @@ class TerminalControls:
         print("[*] Removing NAT configuration...")
 
         vpn_network = self.server.vpn_network
-        tun_name = self.server.tun.device_name
+        tun_name = self.tun_device
 
         # Remove NAT rule
         try:
