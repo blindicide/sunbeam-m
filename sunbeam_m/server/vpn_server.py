@@ -189,19 +189,30 @@ class VPNServer:
 
         session.last_activity = __import__("time").time()
 
-        # Decode frames
+        # Demasquerade then decode frames
         try:
-            packets = session.framing.recv(data)
+            from sunbeam_m.masquerade.base import DecodeError
 
-            for packet_type, packet in packets:
-                if packet_type == PacketType.DATA:
-                    # Route the packet
-                    if self._router:
-                        await self._router.route_packet(packet, client_id, self)
+            if session.masquerade:
+                decoded_chunks = session.masquerade.decode(data)
+                for chunk in decoded_chunks:
+                    packets = session.framing.recv(chunk)
+                    for packet_type, packet in packets:
+                        if packet_type == PacketType.DATA:
+                            # Route the packet
+                            if self._router:
+                                await self._router.route_packet(packet, client_id, self)
+                            session.bytes_received += len(packet)
+            else:
+                packets = session.framing.recv(data)
+                for packet_type, packet in packets:
+                    if packet_type == PacketType.DATA:
+                        # Route the packet
+                        if self._router:
+                            await self._router.route_packet(packet, client_id, self)
+                        session.bytes_received += len(packet)
 
-                    session.bytes_received += len(packet)
-
-        except Exception:
+        except (DecodeError, Exception):
             pass  # Drop malformed packets
 
     async def send_to_client(self, client_id: str, data: bytes) -> bool:
@@ -222,6 +233,10 @@ class VPNServer:
 
         # Encode frame
         frame = session.framing.send(data, PacketType.DATA)
+
+        # Masquerade the frame before sending
+        if session.masquerade:
+            frame = session.masquerade.encode(frame, PacketType.DATA)
 
         try:
             await self.server.send_to_client(client_id, frame)
