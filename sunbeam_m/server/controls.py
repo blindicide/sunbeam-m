@@ -129,6 +129,9 @@ class TerminalControls:
             ServerCommand("stats", "Show server statistics", self._cmd_stats),
             ServerCommand("network", "Show VPN network information", self._cmd_network),
             ServerCommand("connection", "Show connection information for clients", self._cmd_connection),
+            ServerCommand("setup-nat", "Enable NAT/forwarding for internet access (debug-scenario3)", self._cmd_setup_nat),
+            ServerCommand("check-nat", "Check if NAT/forwarding is enabled", self._cmd_check_nat),
+            ServerCommand("disable-nat", "Disable NAT/forwarding and cleanup iptables", self._cmd_disable_nat),
             ServerCommand("help", "Show available commands", self._cmd_help),
             ServerCommand("quit", "Shutdown server", self._cmd_quit),
             ServerCommand("exit", "Shutdown server", self._cmd_quit),
@@ -318,6 +321,211 @@ class TerminalControls:
             print(f"    sudo sunbeam client {self.local_ip} {self.server.port}")
         else:
             print(f"    sudo sunbeam client <server-ip> {self.server.port}")
+
+    async def _cmd_setup_nat(self, _args=""):
+        """Enable NAT/forwarding for internet access."""
+        import subprocess
+
+        loop = asyncio.get_event_loop()
+
+        print("[*] Setting up NAT for internet access...")
+
+        # Enable IP forwarding
+        try:
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["sysctl", "-w", "net.ipv4.ip_forward=1"],
+                    capture_output=True,
+                    text=True,
+                )
+            )
+            if proc.returncode == 0:
+                print("[+] IP forwarding enabled")
+            else:
+                print(f"[!] Failed to enable IP forwarding: {proc.stderr}")
+        except Exception as e:
+            print(f"[!] Error enabling IP forwarding: {e}")
+
+        # Get the VPN network
+        vpn_network = self.server.vpn_network
+
+        # Set up iptables NAT rule
+        try:
+            # Check if rule already exists
+            check_proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["iptables", "-t", "nat", "-C", "POSTROUTING", "-s", vpn_network, "-j", "MASQUERADE"],
+                    capture_output=True,
+                )
+            )
+
+            if check_proc.returncode == 0:
+                print("[*] NAT rule already exists")
+            else:
+                # Add the NAT rule
+                proc = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", vpn_network, "-j", "MASQUERADE"],
+                        capture_output=True,
+                        text=True,
+                    )
+                )
+                if proc.returncode == 0:
+                    print(f"[+] NAT rule added for {vpn_network}")
+                else:
+                    print(f"[!] Failed to add NAT rule: {proc.stderr}")
+        except Exception as e:
+            print(f"[!] Error setting up NAT rule: {e}")
+
+        # Set up forwarding rule (allow traffic from TUN to be forwarded)
+        try:
+            # Check if rule already exists
+            check_proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["iptables", "-C", "FORWARD", "-i", self.server.tun.device_name, "-j", "ACCEPT"],
+                    capture_output=True,
+                )
+            )
+
+            if check_proc.returncode != 0:
+                proc = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["iptables", "-A", "FORWARD", "-i", self.server.tun.device_name, "-j", "ACCEPT"],
+                        capture_output=True,
+                        text=True,
+                    )
+                )
+                if proc.returncode == 0:
+                    print(f"[+] Forward rule added for {self.server.tun.device_name}")
+                else:
+                    print(f"[!] Failed to add forward rule: {proc.stderr}")
+            else:
+                print("[*] Forward rule already exists")
+        except Exception as e:
+            print(f"[!] Error setting up forward rule: {e}")
+
+        print()
+        print("[+] NAT setup complete!")
+        print("[*] Clients can now access the internet through this server")
+
+    async def _cmd_check_nat(self, _args=""):
+        """Check if NAT/forwarding is enabled."""
+        import subprocess
+
+        loop = asyncio.get_event_loop()
+
+        print("NAT Status:")
+        print()
+
+        # Check IP forwarding
+        try:
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["sysctl", "net.ipv4.ip_forward"],
+                    capture_output=True,
+                    text=True,
+                )
+            )
+            if proc.returncode == 0:
+                enabled = "1" in proc.stdout
+                status = "Enabled" if enabled else "Disabled"
+                symbol = "+" if enabled else "!"
+                print(f"  [{symbol}] IP Forwarding: {status}")
+        except Exception as e:
+            print(f"  [!] Could not check IP forwarding: {e}")
+
+        # Check NAT rule
+        try:
+            vpn_network = self.server.vpn_network
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["iptables", "-t", "nat", "-L", "POSTROUTING", "-n"],
+                    capture_output=True,
+                    text=True,
+                )
+            )
+            if proc.returncode == 0:
+                has_nat = vpn_network in proc.stdout
+                status = "Active" if has_nat else "Not configured"
+                symbol = "+" if has_nat else "!"
+                print(f"  [{symbol}] NAT Rule: {status}")
+        except Exception as e:
+            print(f"  [!] Could not check NAT rule: {e}")
+
+        # Check forwarding rule
+        try:
+            tun_name = self.server.tun.device_name
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["iptables", "-L", "FORWARD", "-n", "-v"],
+                    capture_output=True,
+                    text=True,
+                )
+            )
+            if proc.returncode == 0:
+                has_forward = tun_name in proc.stdout
+                status = "Active" if has_forward else "Not configured"
+                symbol = "+" if has_forward else "!"
+                print(f"  [{symbol}] Forward Rule: {status}")
+        except Exception as e:
+            print(f"  [!] Could not check forward rule: {e}")
+
+        print()
+
+    async def _cmd_disable_nat(self, _args=""):
+        """Disable NAT/forwarding and cleanup iptables."""
+        import subprocess
+
+        loop = asyncio.get_event_loop()
+
+        print("[*] Removing NAT configuration...")
+
+        vpn_network = self.server.vpn_network
+        tun_name = self.server.tun.device_name
+
+        # Remove NAT rule
+        try:
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["iptables", "-t", "nat", "-D", "POSTROUTING", "-s", vpn_network, "-j", "MASQUERADE"],
+                    capture_output=True,
+                    text=True,
+                )
+            )
+            if proc.returncode == 0:
+                print(f"[+] Removed NAT rule for {vpn_network}")
+            else:
+                print(f"[*] NAT rule was not configured or already removed")
+        except Exception as e:
+            print(f"[!] Error removing NAT rule: {e}")
+
+        # Remove forward rule
+        try:
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["iptables", "-D", "FORWARD", "-i", tun_name, "-j", "ACCEPT"],
+                    capture_output=True,
+                    text=True,
+                )
+            )
+            if proc.returncode == 0:
+                print(f"[+] Removed forward rule for {tun_name}")
+            else:
+                print(f"[*] Forward rule was not configured or already removed")
+        except Exception as e:
+            print(f"[!] Error removing forward rule: {e}")
+
+        print("[+] NAT configuration removed")
 
     async def _cmd_help(self, _args=""):
         """Show available commands."""
