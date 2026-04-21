@@ -13,7 +13,7 @@ from typing import Optional
 
 from sunbeam_m.core.crypto import CipherSuite, KeyExchange, KeyPair, SessionKeys
 from sunbeam_m.core.framing import FramingSession, PacketType
-from sunbeam_m.masquerade.base import MasqueradeProtocol
+from sunbeam_m.masquerade.base import DecodeError, MasqueradeProtocol
 from sunbeam_m.masquerade.soup import ProtocolSoup
 from sunbeam_m.transport.tcp import TCPTransport
 
@@ -225,7 +225,7 @@ class VPNClient:
         self.session_keys: Optional[SessionKeys] = None
 
         # Masquerade protocol
-        self.masquerade = masquerade or ProtocolSoup(server_host=server_host)
+        self.masquerade = masquerade or ProtocolSoup(server_name=server_host)
 
         # Transport
         self.transport = TCPTransport(
@@ -299,6 +299,9 @@ class VPNClient:
             PacketType.HANDSHAKE,
         ) if self._framing else kex.get_public_key()
 
+        # Masquerade the public key packet
+        if self.masquerade:
+            public_key_packet = self.masquerade.encode(public_key_packet, PacketType.HANDSHAKE)
         await self.transport.send(public_key_packet)
 
         # Wait for server's public key
@@ -335,7 +338,16 @@ class VPNClient:
                 # Encode and encrypt
                 if self._framing:
                     frame = self._framing.send(packet, PacketType.DATA)
+                    # Masquerade the framed data before sending
+                    if self.masquerade:
+                        frame = self.masquerade.encode(frame, PacketType.DATA)
                     await self.transport.send(frame)
+                elif self.masquerade:
+                    # No framing, just masquerade
+                    masqueraded = self.masquerade.encode(packet, PacketType.DATA)
+                    await self.transport.send(masqueraded)
+                else:
+                    await self.transport.send(packet)
 
             except (OSError, ConnectionError):
                 break
@@ -348,7 +360,20 @@ class VPNClient:
 
         def on_receive(data: bytes):
             """Callback for received data."""
-            if self._framing:
+            # Demasquerade the received data first
+            if self.masquerade:
+                try:
+                    decoded_chunks = self.masquerade.decode(data)
+                    for chunk in decoded_chunks:
+                        if self._framing:
+                            packets = self._framing.recv(chunk)
+                            for packet_type, packet in packets:
+                                if packet_type == PacketType.DATA:
+                                    # Write to TUN device
+                                    loop.call_soon_threadsafe(self._write_to_tun, packet)
+                except DecodeError:
+                    pass  # Skip invalid masquerade data
+            elif self._framing:
                 packets = self._framing.recv(data)
                 for packet_type, packet in packets:
                     if packet_type == PacketType.DATA:
