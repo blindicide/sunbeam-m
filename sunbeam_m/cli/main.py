@@ -206,6 +206,44 @@ def protocols():
     click.echo("  soup   - Protocol soup (random rotation between all)")
 
 
+@cli.command()
+@click.option("--host", default="0.0.0.0", help="Bind address")
+@click.option("--port", default=8443, type=int, help="Bind port")
+@click.option("--vpn-network", default="10.10.0.0/24", help="VPN network CIDR")
+@click.option("--vpn-host", default="10.10.0.1", help="Server VPN IP address")
+def server_ctrl(host, port, vpn_network, vpn_host):
+    """
+    Start VPN server with interactive terminal controls.
+
+    Provides commands for managing clients, viewing stats, and server control.
+    """
+    from sunbeam_m.server.controls import run_with_controls
+
+    async def run():
+        try:
+            await run_with_controls(host, port, vpn_network, vpn_host)
+        except KeyboardInterrupt:
+            click.echo("\n[+] Shutting down...")
+
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        click.echo("\n[+] Shutting down...")
+
+
+@cli.command()
+def gui():
+    """Launch the GUI client (requires tkinter)."""
+    try:
+        from sunbeam_m.gui.client_gui import main as gui_main
+
+        gui_main()
+    except ImportError as e:
+        click.echo(f"[!] Failed to import GUI: {e}", err=True)
+        click.echo("[!] Make sure tkinter is installed", err=True)
+        sys.exit(1)
+
+
 def main():
     """Main entry point."""
     cli()
