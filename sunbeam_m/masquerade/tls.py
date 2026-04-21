@@ -259,13 +259,13 @@ class TLSMasquerade(MasqueradeProtocol):
         ext_list.append(versions_ext)
 
         # Supported groups
-        groups = struct.pack("!HHHH", 6, TLS_GROUP_X25519, TLS_GROUP_SECP256R1)
+        groups = struct.pack("!HHH", 6, TLS_GROUP_X25519, TLS_GROUP_SECP256R1)
         groups_ext = struct.pack("!HH", TLS_EXTENSION_SUPPORTED_GROUPS, len(groups)) + groups
         ext_list.append(groups_ext)
 
         # Signature algorithms
         sig_algs = struct.pack(
-            "!HHHH",
+            "!HHH",
             4,
             TLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
             TLS_SIGNATURE_ED25519,

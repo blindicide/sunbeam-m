@@ -147,6 +147,10 @@ class MasqueradeProtocol(ABC):
         Raises:
             ValueError: If transition is invalid
         """
+        # Allow self-transition (no-op) - useful when protocol instances are reused
+        if self.state == new_state:
+            return
+
         if not self._can_transition(new_state):
             raise ValueError(
                 f"Invalid state transition: {self.state.name} -> {new_state.name}"
@@ -169,6 +173,7 @@ class MasqueradeProtocol(ABC):
         valid_transitions = {
             ProtocolState.DISCONNECTED: [
                 ProtocolState.HANDSHAKE_INIT,
+                ProtocolState.HANDSHAKE_SENT,  # For client handshake initiation
                 ProtocolState.ESTABLISHED,  # For single-step masquerade handshakes
             ],
             ProtocolState.HANDSHAKE_INIT: [
