@@ -169,6 +169,7 @@ class MasqueradeProtocol(ABC):
         valid_transitions = {
             ProtocolState.DISCONNECTED: [
                 ProtocolState.HANDSHAKE_INIT,
+                ProtocolState.ESTABLISHED,  # For single-step masquerade handshakes
             ],
             ProtocolState.HANDSHAKE_INIT: [
                 ProtocolState.HANDSHAKE_SENT,
