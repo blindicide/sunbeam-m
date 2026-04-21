@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunbeam-m"
+version = "0.1.0-alpha.1"
+description = "Censorship-resistant masquerading VPN protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Sunbeam-M Contributors"}
+]
+keywords = ["vpn", "censorship", "privacy", "proxy", "obfuscation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "cryptography>=42.0.0",
+    "pytun>=2.3.0",
+    "aiohttp>=3.9.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+sunbeam = "sunbeam_m.cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/username/sunbeam-m"
+Repository = "https://github.com/username/sunbeam-m"
+Issues = "https://github.com/username/sunbeam-m/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sunbeam_m*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+target-version = "py310"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
