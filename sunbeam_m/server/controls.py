@@ -9,6 +9,7 @@ Provides interactive terminal commands for managing the VPN server:
 """
 
 import asyncio
+import socket
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,6 +17,57 @@ from typing import Optional
 
 from sunbeam_m.__about__ import __version__
 from sunbeam_m.server.vpn_server import VPNServer, ClientSession
+
+
+def get_public_ip() -> Optional[str]:
+    """
+    Get the public IP address using external services.
+
+    Tries multiple services in sequence, returns first successful response.
+    Returns None if all services fail.
+    """
+    import urllib.request
+
+    services = [
+        ("https://api.ipify.org", 5),
+        ("https://icanhazip.com", 5),
+        ("https://ifconfig.me/ip", 5),
+    ]
+
+    for url, timeout in services:
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                ip = response.read().decode().strip()
+                # Validate it looks like an IP
+                parts = ip.split(".")
+                if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+                    return ip
+        except Exception:
+            continue
+
+    return None
+
+
+def get_local_ip() -> Optional[str]:
+    """
+    Get the local IP address of the default interface.
+
+    Uses a simple UDP connection trick to determine the local IP.
+    """
+    try:
+        # Connect to a public DNS server (doesn't actually send data)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(0)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            return local_ip
+    except Exception:
+        return None
+
+
+def get_hostname() -> str:
+    """Get the system hostname."""
+    return socket.gethostname()
 
 
 @dataclass
@@ -47,16 +99,27 @@ class TerminalControls:
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-    def __init__(self, server: VPNServer):
+    def __init__(self, server: VPNServer, detect_ip: bool = True):
         """
         Initialize terminal controls.
 
         Args:
             server: VPN server instance
+            detect_ip: Whether to detect and display IP addresses
         """
         self.server = server
         self._running = True
         self._start_time = datetime.now()
+        self.detect_ip = detect_ip
+
+        # Detect IP addresses
+        self.public_ip = None
+        self.local_ip = None
+        self.hostname = None
+        if detect_ip:
+            self.public_ip = get_public_ip()
+            self.local_ip = get_local_ip()
+            self.hostname = get_hostname()
 
         # Register commands
         self.commands = [
@@ -65,6 +128,7 @@ class TerminalControls:
             ServerCommand("kick", "Disconnect a client (usage: kick <client_id>)", self._cmd_kick),
             ServerCommand("stats", "Show server statistics", self._cmd_stats),
             ServerCommand("network", "Show VPN network information", self._cmd_network),
+            ServerCommand("connection", "Show connection information for clients", self._cmd_connection),
             ServerCommand("help", "Show available commands", self._cmd_help),
             ServerCommand("quit", "Shutdown server", self._cmd_quit),
             ServerCommand("exit", "Shutdown server", self._cmd_quit),
@@ -73,8 +137,23 @@ class TerminalControls:
     async def run(self):
         """Run the terminal control interface."""
         print(self.BANNER)
+
+        # Display connection info
         print(f"[+] Server started on {self.server.host}:{self.server.port}")
         print(f"[+] VPN Network: {self.server.vpn_network}")
+
+        # Display IP information for easy connection
+        if self.detect_ip:
+            print()
+            print("[+] Connection Information:")
+            if self.public_ip:
+                print(f"    Public IP:  {self.public_ip}:{self.server.port}")
+            if self.local_ip and self.local_ip != self.server.host:
+                print(f"    Local IP:   {self.local_ip}:{self.server.port}")
+            if self.hostname:
+                print(f"    Hostname:   {self.hostname}:{self.server.port}")
+
+        print()
         print("[+] Type 'help' for available commands")
         print()
 
@@ -217,6 +296,28 @@ class TerminalControls:
         print(f"  Network:    {self.server.vpn_network}")
         print(f"  Server IP:  {self.server.vpn_host}")
         print(f"  Available:  {self.server._ip_pool.available_count} addresses")
+
+    async def _cmd_connection(self, _args=""):
+        """Show connection information for clients."""
+        print("Client Connection Information:")
+        print()
+        print(f"  Server:    {self.server.host}:{self.server.port}")
+
+        if self.public_ip:
+            print(f"  Public:    {self.public_ip}:{self.server.port}  (use this from internet)")
+        if self.local_ip and self.local_ip != self.server.host:
+            print(f"  Local:     {self.local_ip}:{self.server.port}  (use this from LAN)")
+        if self.hostname:
+            print(f"  Hostname:  {self.hostname}:{self.server.port}")
+
+        print()
+        print("  Client command examples:")
+        if self.public_ip:
+            print(f"    sudo sunbeam client {self.public_ip} {self.server.port}")
+        elif self.local_ip:
+            print(f"    sudo sunbeam client {self.local_ip} {self.server.port}")
+        else:
+            print(f"    sudo sunbeam client <server-ip> {self.server.port}")
 
     async def _cmd_help(self, _args=""):
         """Show available commands."""
