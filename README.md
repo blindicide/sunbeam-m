@@ -220,6 +220,20 @@ sudo dnf install python3-tkinter  # Fedora
 - Verify firewall allows port 8443
 - Check server logs for errors
 
+### sudo: sunbeam: command not found
+If `sudo sunbeam` fails but `sunbeam` works without sudo, it's because sudo's `secure_path` doesn't include your local bin directory. Workarounds:
+
+```bash
+# Option 1: Use Python module directly (recommended)
+sudo /path/to/venv/bin/python -m sunbeam_m.cli.main client example.com 8443
+
+# Option 2: Full path to sunbeam script
+sudo ~/.local/bin/sunbeam client example.com 8443
+
+# Option 3: Preserve PATH with sudo
+sudo PATH="$PATH" sunbeam client example.com 8443
+```
+
 ## Security Considerations
 
 - **Forward secrecy**: Ephemeral X25519 ECDH per session
