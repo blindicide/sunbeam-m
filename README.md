@@ -1,3 +1,5 @@
+> **Archive Notice:** This repository is archived. Superseded / retired project consolidated into `blindicide/archive` under `sunbeam-m/`.
+
 # Sunbeam-M: Censorship-Resistant Masquerading VPN
 
 > **Warning**: This is a research/POC implementation. Not ready for production use.
